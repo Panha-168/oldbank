@@ -1,0 +1,1602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DataVault — Secure Data Management</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp }                        from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, collection, doc, setDoc, onSnapshot, getDocs, deleteDoc, writeBatch, serverTimestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+window._fbReady = false;
+window._firestore = null;
+window._fbInit = async function(cfg) {
+  try {
+    const app = initializeApp(cfg);
+    window._firestore = getFirestore(app);
+    window._fbReady   = true;
+    window._fbColl    = (name) => collection(window._firestore, name);
+    window._fbDoc     = (col, id) => doc(window._firestore, col, id);
+    window._fbSet     = (col, id, data) => setDoc(window._fbDoc(col,id), data);
+    window._fbDel     = (col, id) => deleteDoc(window._fbDoc(col,id));
+    window._fbGetAll  = (col) => getDocs(window._fbColl(col));
+    window._fbListen  = (col, cb) => onSnapshot(window._fbColl(col), cb);
+    window._fbBatch   = () => writeBatch(window._firestore);
+    window._fbTS      = serverTimestamp;
+    console.log('Firebase ready');
+    return true;
+  } catch(e) { console.error('Firebase init failed', e); return false; }
+};
+</script>
+<style>
+:root {
+  --bg:#0a0b0f; --surface:#111318; --surface2:#181b22; --surface3:#1e2230;
+  --border:#1e2230; --border2:#252838;
+  --accent:#00e5a0; --accent2:#0080ff; --warn:#ffb800; --danger:#ff4444; --purple:#a78bfa;
+  --owner:#f59e0b; --admin:#0080ff; --staff:#00e5a0;
+  --text:#e8eaf0; --muted:#5a6070; --muted2:#8891a0;
+  --radius:12px; --sidebar:240px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'DM Mono',monospace;min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none;z-index:9999;opacity:.4}
+/* SYNC */
+.sync-bar{position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--accent2));z-index:9998;transform:scaleX(0);transform-origin:left;transition:transform .4s ease;opacity:0}
+.sync-bar.syncing{transform:scaleX(1);opacity:1}
+.sync-status{position:fixed;top:10px;right:16px;font-size:11px;z-index:9998;display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:5px 12px;opacity:0;transition:opacity .3s;pointer-events:none}
+.sync-status.show{opacity:1}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.sync-dot.green{background:var(--accent);box-shadow:0 0 6px var(--accent);animation:livePulse 2s infinite}
+@keyframes livePulse{0%,100%{box-shadow:0 0 4px var(--accent)}50%{box-shadow:0 0 12px var(--accent),0 0 20px var(--accent)}}
+.sync-dot.orange{background:var(--warn);animation:pulse .8s infinite}
+.sync-dot.red{background:var(--danger)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+/* SCROLLBAR */
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:10px}
+/* AUTH */
+#authScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;background:radial-gradient(ellipse 80% 60% at 50% 40%,rgba(0,229,160,.06) 0%,transparent 70%)}
+.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:40px;width:100%;max-width:440px;position:relative;overflow:hidden}
+.auth-card::before{content:'';position:absolute;top:-1px;left:20%;right:20%;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent)}
+.auth-logo{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+.auth-logo-icon{width:44px;height:44px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.auth-logo-text{font-family:'Syne',sans-serif;font-weight:800;font-size:22px;letter-spacing:-.5px}
+.auth-logo-text span{color:var(--accent)}
+/* ROLE TABS */
+.role-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:20px;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:5px}
+.role-tab{padding:10px 6px;border-radius:8px;border:1px solid transparent;background:none;cursor:pointer;font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--muted2);transition:all .2s;display:flex;flex-direction:column;align-items:center;gap:5px;letter-spacing:.04em;text-transform:uppercase}
+.role-tab .tab-icon{font-size:20px}
+.role-tab:hover:not(.rt-active){background:var(--surface3);color:var(--text)}
+.rt-active-owner{background:rgba(245,158,11,.15)!important;color:var(--owner)!important;border-color:rgba(245,158,11,.4)!important}
+.rt-active-admin{background:rgba(0,128,255,.15)!important;color:#60a5fa!important;border-color:rgba(0,128,255,.4)!important}
+.rt-active-staff{background:rgba(0,229,160,.13)!important;color:var(--accent)!important;border-color:rgba(0,229,160,.4)!important}
+.role-hint{font-size:12px;color:var(--muted2);background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;margin-bottom:18px;line-height:1.6;min-height:38px}
+.lock-bar{display:flex;align-items:center;gap:8px;background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.2);border-radius:8px;padding:8px 14px;font-size:12px;color:#ff9999;margin-bottom:14px;display:none}
+.auth-error{background:rgba(255,68,68,.1);border:1px solid rgba(255,68,68,.3);border-radius:8px;padding:10px 14px;font-size:13px;color:#ff7777;margin-bottom:16px;display:none}
+/* FORMS */
+.form-group{margin-bottom:18px}
+.form-label{display:block;font-size:11px;font-weight:500;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px}
+.form-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:11px 16px;color:var(--text);font-family:'DM Mono',monospace;font-size:14px;transition:border-color .2s,box-shadow .2s;outline:none}
+.form-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,229,160,.1)}
+.form-input::placeholder{color:var(--muted)}
+.form-hint{font-size:11px;color:var(--muted);margin-top:5px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.input-wrap{position:relative}
+.input-prefix{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--accent);font-size:13px;pointer-events:none;z-index:1}
+.input-wrap .form-input.has-prefix{padding-left:50px}
+.btn{width:100%;padding:13px;border:none;border-radius:8px;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.02em}
+.btn-primary{background:var(--accent);color:#000}
+.btn-primary:hover{background:#00ffb0;transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,229,160,.25)}
+.btn-owner{background:var(--owner);color:#000}
+.btn-owner:hover{background:#fbbf24;transform:translateY(-1px);box-shadow:0 8px 24px rgba(245,158,11,.3)}
+.btn-admin{background:#3b82f6;color:#fff}
+.btn-admin:hover{background:#60a5fa;transform:translateY(-1px);box-shadow:0 8px 24px rgba(59,130,246,.3)}
+.btn-submit{background:var(--accent);color:#000;border:none;border-radius:8px;padding:11px 24px;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:8px}
+.btn-submit:hover{background:#00ffb0;transform:translateY(-1px)}
+.btn-sm{padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid;transition:all .15s;font-family:'DM Mono',monospace}
+.btn-danger{background:rgba(255,68,68,.1);border-color:rgba(255,68,68,.3);color:#ff7777}
+.btn-danger:hover{background:rgba(255,68,68,.2);border-color:#ff4444}
+.btn-edit{background:rgba(0,128,255,.1);border-color:rgba(0,128,255,.3);color:#60a5fa}
+.btn-edit:hover{background:rgba(0,128,255,.2)}
+/* APP LAYOUT */
+#app{display:none;min-height:100vh}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:var(--sidebar);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:200;transition:transform .25s}
+.sidebar-logo{padding:22px 20px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.sidebar-logo-icon{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.sidebar-logo-text{font-family:'Syne',sans-serif;font-weight:800;font-size:16px;letter-spacing:-.3px}
+.sidebar-logo-text span{color:var(--accent)}
+.sidebar-nav{flex:1;overflow-y:auto;padding:8px}
+.sidebar-section{padding:14px 12px 6px;font-size:10px;font-weight:500;color:var(--muted);letter-spacing:.12em;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;margin:1px 0;cursor:pointer;transition:all .15s;font-size:13px;color:var(--muted2);position:relative;user-select:none}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:rgba(0,229,160,.1);color:var(--accent)}
+.nav-item.active::before{content:'';position:absolute;left:-8px;top:50%;transform:translateY(-50%);width:3px;height:20px;background:var(--accent);border-radius:2px}
+.nav-icon{font-size:16px;width:20px;text-align:center;flex-shrink:0}
+.sidebar-footer{border-top:1px solid var(--border);padding:14px}
+.user-badge{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border-radius:8px}
+.user-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;font-family:'Syne',sans-serif;flex-shrink:0}
+.av-owner{background:linear-gradient(135deg,var(--owner),#f97316)}
+.av-admin{background:linear-gradient(135deg,#3b82f6,var(--accent))}
+.av-staff{background:linear-gradient(135deg,var(--accent),var(--purple))}
+.user-name{font-size:12px;font-weight:500;color:var(--text);line-height:1.3}
+.user-role-lbl{font-size:10px;font-weight:700;letter-spacing:.06em}
+.lbl-owner{color:var(--owner)}
+.lbl-admin{color:#60a5fa}
+.lbl-staff{color:var(--accent)}
+.logout-btn{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;transition:color .2s}
+.logout-btn:hover{color:var(--danger)}
+/* HAMBURGER */
+.hamburger{display:none;position:fixed;top:14px;left:14px;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer;font-size:18px;transition:all .15s}
+.hamburger:hover{border-color:var(--accent);color:var(--accent)}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:199}
+.main{margin-left:var(--sidebar);padding:28px;min-height:100vh;transition:margin .25s}
+/* PAGE */
+.section-page{display:none}.section-page.active{display:block}
+.page-header{margin-bottom:24px;display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.page-title{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;letter-spacing:-.5px}
+.page-sub{color:var(--muted2);font-size:13px;margin-top:3px}
+.page-badge{background:rgba(0,229,160,.1);border:1px solid rgba(0,229,160,.25);color:var(--accent);padding:6px 14px;border-radius:20px;font-size:12px;font-weight:500}
+/* STATS */
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
+.stats-row-2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:22px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;position:relative;overflow:hidden;transition:border-color .2s}
+.stat-card:hover{border-color:var(--border2)}
+.stat-card::after{content:attr(data-icon);position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:28px;opacity:.12}
+.stat-label{font-size:11px;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+.stat-value{font-family:'Syne',sans-serif;font-size:30px;font-weight:800;line-height:1}
+/* CARDS */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:20px;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.card-title{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;gap:10px}
+.card-title .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+/* TABLE */
+.table-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px}
+.table-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.table-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700}
+.table-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.search-wrap{position:relative}
+.search-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
+.search-input{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:7px 12px 7px 32px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:200px;outline:none;transition:border-color .2s}
+.search-input:focus{border-color:var(--accent)}
+.filter-select{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:7px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;outline:none;cursor:pointer}
+table{width:100%;border-collapse:collapse}
+thead th{padding:11px 18px;text-align:left;font-size:10px;font-weight:500;color:var(--muted2);letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid var(--border);background:var(--surface2);cursor:pointer;user-select:none;white-space:nowrap}
+thead th:hover{color:var(--text)}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:rgba(255,255,255,.02)}
+td{padding:12px 18px;font-size:13px;vertical-align:middle}
+/* CHIPS */
+.chip{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500}
+.chip-green{background:rgba(0,229,160,.12);color:var(--accent)}
+.chip-blue{background:rgba(0,128,255,.12);color:#60a5fa}
+.chip-warn{background:rgba(255,184,0,.12);color:var(--warn)}
+.chip-purple{background:rgba(167,139,250,.12);color:var(--purple)}
+.chip-owner{background:rgba(245,158,11,.15);color:var(--owner);border:1px solid rgba(245,158,11,.3)}
+.chip-adminr{background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.3)}
+.chip-staffr{background:rgba(0,229,160,.12);color:var(--accent)}
+.td-user{display:flex;align-items:center;gap:9px}
+.td-avatar{width:28px;height:28px;background:linear-gradient(135deg,var(--accent2),var(--accent));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'Syne',sans-serif;color:#fff;flex-shrink:0}
+.copy-btn{background:none;border:1px solid var(--border);border-radius:5px;padding:2px 8px;color:var(--muted2);cursor:pointer;font-size:10px;transition:all .15s;font-family:'DM Mono',monospace;margin-left:6px}
+.copy-btn:hover{border-color:var(--accent);color:var(--accent)}
+.action-btns{display:flex;gap:6px;flex-wrap:nowrap}
+.export-bar{display:flex;gap:8px;align-items:center}
+.export-btn{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:6px 14px;color:var(--muted2);cursor:pointer;font-size:12px;font-family:'DM Mono',monospace;transition:all .15s;display:flex;align-items:center;gap:6px}
+.export-btn:hover{border-color:var(--accent);color:var(--accent)}
+/* MODALS */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;max-width:460px;width:100%;position:relative;animation:modalIn .22s ease}
+@keyframes modalIn{from{transform:scale(.93) translateY(14px);opacity:0}to{transform:scale(1) translateY(0);opacity:1}}
+.modal.modal-warn::before,.modal.modal-info::before,.modal.modal-danger::before{content:'';position:absolute;top:-1px;left:30%;right:30%;height:1px}
+.modal.modal-warn::before{background:linear-gradient(90deg,transparent,var(--warn),transparent)}
+.modal.modal-info::before{background:linear-gradient(90deg,transparent,var(--accent),transparent)}
+.modal.modal-danger::before{background:linear-gradient(90deg,transparent,var(--danger),transparent)}
+.modal-icon{font-size:38px;margin-bottom:14px}
+.modal-title{font-family:'Syne',sans-serif;font-size:19px;font-weight:700;margin-bottom:8px}
+.modal-body{color:var(--muted2);font-size:13px;line-height:1.7;margin-bottom:18px}
+.modal-data-row{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:11px 14px;font-size:13px;margin-bottom:8px}
+.modal-data-label{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px}
+.modal-data-val{color:var(--warn);font-weight:500}
+.modal-date{color:var(--muted2);font-size:11px;margin-top:3px}
+.modal-actions{display:flex;gap:10px;margin-top:12px}
+.btn-modal{flex:1;padding:10px;border:1px solid var(--border);border-radius:8px;font-family:'Syne',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
+.btn-modal-close{background:var(--surface2);color:var(--text)}
+.btn-modal-close:hover{border-color:var(--accent);color:var(--accent)}
+.btn-modal-confirm{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn-modal-confirm:hover{background:#ff2222}
+/* TOAST */
+#toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:12px 18px;display:flex;align-items:center;gap:10px;font-size:13px;z-index:9000;box-shadow:0 8px 32px rgba(0,0,0,.4);opacity:0;transform:translateY(14px);transition:all .28s;pointer-events:none;max-width:320px}
+#toast.show{opacity:1;transform:translateY(0)}
+/* PASS */
+.pass-section{margin-top:20px;padding-top:20px;border-top:1px solid var(--border)}
+.pass-section-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;margin-bottom:14px;color:var(--muted2)}
+/* CHART */
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+.chart-card-title{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;margin-bottom:16px;color:var(--muted2)}
+.chart-wrap{position:relative;height:180px}
+/* EMPTY */
+.empty-state{text-align:center;padding:44px;color:var(--muted)}
+.empty-icon{font-size:36px;margin-bottom:10px;opacity:.35}
+.empty-text{font-size:14px}
+/* DATE FILTER - hidden */
+.date-filter-row{display:none!important}
+/* STAFF DETAIL */
+.staff-detail-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.sdc{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
+.sdc-num{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-bottom:2px}
+.sdc-lbl{font-size:10px;color:var(--muted2);text-transform:uppercase;letter-spacing:.08em}
+/* MOBILE */
+@media(max-width:768px){
+  :root{--sidebar:240px}
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .sidebar-overlay.open{display:block}
+  .main{margin-left:0;padding:16px;padding-top:56px}
+  .hamburger{display:flex;align-items:center;justify-content:center}
+  .stats-row{grid-template-columns:1fr 1fr}
+  .stats-row-2{grid-template-columns:1fr 1fr}
+  .chart-grid{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr}
+  .page-title{font-size:20px}
+  .table-controls{flex-direction:column;align-items:flex-start}
+  .search-input{width:100%}
+  .staff-detail-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:480px){
+  .stats-row{grid-template-columns:1fr}
+  .auth-card{padding:28px 18px}
+}
+
+/* FIREBASE SETUP */
+#fbSetupModal{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}
+#fbSetupModal.open{display:flex}
+.fb-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:36px;width:100%;max-width:560px;position:relative}
+.fb-card::before{content:'';position:absolute;top:-1px;left:20%;right:20%;height:2px;background:linear-gradient(90deg,transparent,#f5a623,transparent)}
+.fb-title{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.fb-sub{color:var(--muted2);font-size:13px;margin-bottom:22px;line-height:1.6}
+.fb-steps{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:20px;font-size:12px;color:var(--muted2);line-height:2}
+.fb-steps b{color:var(--accent)}
+.fb-steps a{color:var(--accent2);text-decoration:none}
+.fb-paste-label{font-size:11px;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px}
+.fb-paste{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;resize:vertical;min-height:130px;outline:none;transition:border-color .2s}
+.fb-paste:focus{border-color:var(--accent)}
+.fb-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+.fb-btn{flex:1;padding:12px;border:none;border-radius:8px;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s}
+.fb-btn-primary{background:var(--accent);color:#000}
+.fb-btn-primary:hover{background:#00ffb0}
+.fb-btn-skip{background:var(--surface2);border:1px solid var(--border);color:var(--muted2)}
+.fb-btn-skip:hover{border-color:var(--accent);color:var(--text)}
+.fb-error{background:rgba(255,68,68,.1);border:1px solid rgba(255,68,68,.3);border-radius:8px;padding:10px 14px;font-size:12px;color:#ff7777;margin-top:12px;display:none}
+</style>
+</head>
+<body>
+
+<div class="sync-bar" id="syncBar"></div>
+<div class="sync-status" id="syncStatus"><div class="sync-dot green" id="syncDot"></div><span id="syncText">Synced</span></div>
+
+<!-- AUTH -->
+<div id="authScreen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">🔐</div>
+      <div class="auth-logo-text">Data<span>Vault</span></div>
+    </div>
+
+    <div class="role-tabs" id="roleTabs">
+      <button class="role-tab" id="tab-owner" onclick="selectRoleTab('owner')">
+        <span class="tab-icon">👑</span>Owner
+      </button>
+      <button class="role-tab" id="tab-admin" onclick="selectRoleTab('admin')">
+        <span class="tab-icon">🛡️</span>Admin
+      </button>
+      <button class="role-tab" id="tab-staff" onclick="selectRoleTab('staff')">
+        <span class="tab-icon">👤</span>Staff
+      </button>
+    </div>
+
+    <div class="role-hint" id="roleHint">Select your role above to sign in.</div>
+
+    <div class="auth-error" id="authError"></div>
+
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input class="form-input" id="loginUser" type="text" autocomplete="off" placeholder="">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input class="form-input" id="loginPass" type="password" placeholder="••••••••">
+    </div>
+    <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Sign In →</button>
+  </div>
+</div>
+
+<!-- HAMBURGER -->
+<button class="hamburger" id="hamburger" onclick="toggleSidebar()">☰</button>
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<!-- APP -->
+<div id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">🔐</div>
+      <div class="sidebar-logo-text">Data<span>Vault</span></div>
+    </div>
+    <div class="sidebar-nav">
+      <div class="sidebar-section">Overview</div>
+      <div class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard',this)"><span class="nav-icon">📊</span>Dashboard</div>
+      <div class="nav-item" id="nav-users" onclick="showPage('users',this)" style="display:none"><span class="nav-icon">👑</span>Manage Users</div>
+      <div class="nav-item" id="nav-staffdetail" onclick="showPage('staffdetail',this)" style="display:none"><span class="nav-icon">📋</span>Staff Details</div>
+      <div class="sidebar-section">Data Entry</div>
+      <div class="nav-item" id="nav-whatsapp" onclick="showPage('whatsapp',this)"><span class="nav-icon">💬</span>WhatsApp Numbers</div>
+      <div class="nav-item" id="nav-account" onclick="showPage('account',this)"><span class="nav-icon">🏦</span>Account Numbers</div>
+      <div class="nav-item" id="nav-upi" onclick="showPage('upi',this)"><span class="nav-icon">💳</span>UPI IDs</div>
+      <div class="sidebar-section">Records</div>
+      <div class="nav-item" id="nav-alldata" onclick="showPage('alldata',this)"><span class="nav-icon">🗄️</span>All Records</div>
+      <div class="sidebar-section">Account</div>
+      <div class="nav-item" id="nav-profile" onclick="showPage('profile',this)"><span class="nav-icon">⚙️</span>My Profile</div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="user-badge">
+        <div class="user-avatar av-staff" id="sidebarAvatar">U</div>
+        <div style="flex:1;min-width:0">
+          <div class="user-name" id="sidebarName" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">User</div>
+          <div class="user-role-lbl lbl-staff" id="sidebarRole">STAFF</div>
+        </div>
+        <button class="logout-btn" onclick="doLogout()">⏻</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <!-- DASHBOARD -->
+    <div class="section-page active" id="page-dashboard">
+      <div class="page-header">
+        <div><div class="page-title">Dashboard</div><div class="page-sub">Overview of all stored data.</div></div>
+        <div class="page-badge" id="dashTime">—</div>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card" data-icon="👤"><div class="stat-label">Total Users</div><div class="stat-value" id="statUsers" style="color:var(--accent2)">0</div></div>
+        <div class="stat-card" data-icon="💬"><div class="stat-label">WhatsApp</div><div class="stat-value" id="statWA" style="color:var(--accent)">0</div></div>
+        <div class="stat-card" data-icon="🏦"><div class="stat-label">Accounts</div><div class="stat-value" id="statAcc" style="color:var(--warn)">0</div></div>
+      </div>
+      <div class="stats-row-2">
+        <div class="stat-card" data-icon="💳"><div class="stat-label">UPI IDs</div><div class="stat-value" id="statUPI" style="color:var(--purple)">0</div></div>
+        <div class="stat-card" data-icon="🗄️"><div class="stat-label">Total Records</div><div class="stat-value" id="statTotal" style="color:var(--text)">0</div></div>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-card"><div class="chart-card-title">Records by Type</div><div class="chart-wrap"><canvas id="chartType"></canvas></div></div>
+        <div class="chart-card"><div class="chart-card-title">Records Added (Last 30 Days)</div><div class="chart-wrap"><canvas id="chartActivity"></canvas></div></div>
+      </div>
+      <div class="table-card">
+        <div class="table-header">
+          <div class="table-title">Recent Activity</div>
+          <div id="userLeaderboard" style="font-size:12px;color:var(--muted2)"></div>
+        </div>
+        <table><thead><tr><th>Type</th><th>Value</th><th>Added By</th><th>Date &amp; Time</th></tr></thead>
+        <tbody id="recentTable"></tbody></table>
+      </div>
+    </div>
+
+    <!-- MANAGE USERS (Owner only) -->
+    <div class="section-page" id="page-users">
+      <div class="page-header">
+        <div><div class="page-title">👑 Manage Users</div><div class="page-sub">Create Admin &amp; Staff accounts. Only Owner can do this.</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><div class="dot"></div>Create New Account</div>
+        <div class="form-grid">
+          <div class="form-group"><label class="form-label">Username</label><input class="form-input" id="newUserUser" type="text" placeholder="e.g. rahul123"></div>
+          <div class="form-group"><label class="form-label">Password</label><input class="form-input" id="newUserPass" type="password" placeholder="Min 6 characters"></div>
+          <div class="form-group"><label class="form-label">Role</label>
+            <select class="form-input" id="newUserRole">
+              <option value="staff">👤 Staff</option>
+              <option value="admin">🛡️ Admin</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn-submit" onclick="registerUser()">➕ Create Account</button>
+      </div>
+      <div class="table-card">
+        <div class="table-header">
+          <div class="table-title">All Users</div>
+          <div class="table-controls">
+            <div class="search-wrap"><span class="search-icon">🔍</span><input class="search-input" id="searchUsers" type="text" placeholder="Search..." oninput="renderUsersTable()"></div>
+          </div>
+        </div>
+        <table><thead><tr><th>#</th><th>Username</th><th>Role</th><th>Joined / Records</th><th>Action</th></tr></thead>
+        <tbody id="usersTable"></tbody></table>
+      </div>
+    </div>
+
+    <!-- STAFF DETAILS (Owner only) -->
+    <div class="section-page" id="page-staffdetail">
+      <div class="page-header">
+        <div><div class="page-title">📋 Staff Details</div><div class="page-sub">Activity &amp; record contributions per member.</div></div>
+      </div>
+      <div id="staffDetailContent"></div>
+    </div>
+
+    <!-- WHATSAPP -->
+    <div class="section-page" id="page-whatsapp">
+      <div class="page-header"><div><div class="page-title">WhatsApp Numbers</div><div class="page-sub">Auto-prefixed with +91.</div></div></div>
+      <div class="card">
+        <div class="card-title"><div class="dot"></div>Add WhatsApp Number</div>
+        <div class="form-grid">
+          <div class="form-group"><label class="form-label">Assign to User</label><select class="form-input" id="waUser"></select></div>
+          <div class="form-group"><label class="form-label">WhatsApp Number</label>
+            <div class="input-wrap"><span class="input-prefix">+91</span><input class="form-input has-prefix" id="waNumber" type="text" placeholder="9876543210" maxlength="10"></div>
+            <div class="form-hint">10-digit number</div>
+          </div>
+        </div>
+        <button class="btn-submit" onclick="addWhatsApp()">💬 Add Number</button>
+      </div>
+      <div class="table-card">
+        <div class="table-header">
+          <div class="table-title">WhatsApp Records</div>
+          <div class="table-controls">
+            <div class="date-filter-row"><input type="date" id="waFrom"><input type="date" id="waTo"></div>
+            <div id="waUserFilter"></div>
+            <div class="search-wrap"><span class="search-icon">🔍</span><input class="search-input" id="searchWA" type="text" placeholder="Search..." oninput="renderWATable()"></div>
+            <div class="export-bar"><button class="export-btn" onclick="exportCSV('whatsapp')">⬇ CSV</button></div>
+          </div>
+        </div>
+        <table><thead><tr><th onclick="sortTable('wa','num')">WhatsApp Number ↕</th><th onclick="sortTable('wa','user')">User</th><th onclick="sortTable('wa','date')">Added ↕</th><th>Action</th></tr></thead>
+        <tbody id="waTable"></tbody></table>
+      </div>
+    </div>
+
+    <!-- ACCOUNT -->
+    <div class="section-page" id="page-account">
+      <div class="page-header"><div><div class="page-title">Account Numbers</div><div class="page-sub">Leading zeros auto-stripped.</div></div></div>
+      <div class="card">
+        <div class="card-title"><div class="dot"></div>Add Account Number</div>
+        <div class="form-grid">
+          <div class="form-group"><label class="form-label">Assign to User</label><select class="form-input" id="accUser"></select></div>
+          <div class="form-group"><label class="form-label">Account Number</label><input class="form-input" id="accNumber" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 0001234567890" oninput="this.value=this.value.replace(/[^0-9]/g,'')"><div class="form-hint">Numbers only · Leading zeros stripped automatically</div></div>
+        </div>
+        <button class="btn-submit" onclick="addAccount()">🏦 Add Account</button>
+      </div>
+      <div class="table-card">
+        <div class="table-header">
+          <div class="table-title">Account Records</div>
+          <div class="table-controls">
+            <div class="date-filter-row"><input type="date" id="accFrom"><input type="date" id="accTo"></div>
+            <div id="accUserFilter"></div>
+            <div class="search-wrap"><span class="search-icon">🔍</span><input class="search-input" id="searchAcc" type="text" placeholder="Search..." oninput="renderAccTable()"></div>
+            <div class="export-bar"><button class="export-btn" onclick="exportCSV('accounts')">⬇ CSV</button></div>
+          </div>
+        </div>
+        <table><thead><tr><th onclick="sortTable('acc','num')">Account No. ↕</th><th onclick="sortTable('acc','user')">User</th><th onclick="sortTable('acc','date')">Added ↕</th><th>Action</th></tr></thead>
+        <tbody id="accTable"></tbody></table>
+      </div>
+    </div>
+
+    <!-- UPI -->
+    <div class="section-page" id="page-upi">
+      <div class="page-header"><div><div class="page-title">UPI IDs</div><div class="page-sub">Store and manage UPI identifiers.</div></div></div>
+      <div class="card">
+        <div class="card-title"><div class="dot"></div>Add UPI ID</div>
+        <div class="form-grid">
+          <div class="form-group"><label class="form-label">Assign to User</label><select class="form-input" id="upiUser"></select></div>
+          <div class="form-group"><label class="form-label">UPI ID</label><input class="form-input" id="upiID" type="text" placeholder="e.g. name@upi"></div>
+        </div>
+        <button class="btn-submit" onclick="addUPI()">💳 Add UPI ID</button>
+      </div>
+      <div class="table-card">
+        <div class="table-header">
+          <div class="table-title">UPI Records</div>
+          <div class="table-controls">
+            <div class="date-filter-row"><input type="date" id="upiFrom"><input type="date" id="upiTo"></div>
+            <div id="upiUserFilter"></div>
+            <div class="search-wrap"><span class="search-icon">🔍</span><input class="search-input" id="searchUPI" type="text" placeholder="Search..." oninput="renderUPITable()"></div>
+            <div class="export-bar"><button class="export-btn" onclick="exportCSV('upi')">⬇ CSV</button></div>
+          </div>
+        </div>
+        <table><thead><tr><th onclick="sortTable('upi','val')">UPI ID ↕</th><th onclick="sortTable('upi','user')">User</th><th onclick="sortTable('upi','date')">Added ↕</th><th>Action</th></tr></thead>
+        <tbody id="upiTable"></tbody></table>
+      </div>
+    </div>
+
+    <!-- ALL RECORDS -->
+    <div class="section-page" id="page-alldata">
+      <div class="page-header"><div><div class="page-title">All Records</div><div class="page-sub">Complete view of all stored data.</div></div></div>
+      <div class="table-card">
+        <div class="table-header">
+          <div class="table-title">All Data</div>
+          <div class="table-controls">
+            <div class="date-filter-row"><input type="date" id="allFrom"><input type="date" id="allTo"></div>
+            <select class="filter-select" id="filterType" onchange="renderAllTable()"><option value="">All Types</option><option value="WhatsApp">WhatsApp</option><option value="Account">Account</option><option value="UPI">UPI</option></select>
+            <div id="allUserFilter"></div>
+            <div class="search-wrap"><span class="search-icon">🔍</span><input class="search-input" id="searchAll" type="text" placeholder="Search..." oninput="renderAllTable()"></div>
+            <div class="export-bar"><button class="export-btn" onclick="exportCSV('all')">⬇ CSV</button></div>
+          </div>
+        </div>
+        <table><thead><tr><th>#</th><th>Type</th><th onclick="sortTable('all','val')">Value ↕</th><th onclick="sortTable('all','user')">User</th><th onclick="sortTable('all','date')">Date Added ↕</th><th>Action</th></tr></thead>
+        <tbody id="allTable"></tbody></table>
+      </div>
+    </div>
+
+    <!-- PROFILE -->
+    <div class="section-page" id="page-profile">
+      <div class="page-header"><div><div class="page-title">My Profile</div><div class="page-sub">Manage your account settings.</div></div></div>
+      <div class="card">
+        <div class="card-title"><div class="dot"></div>Account Info</div>
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+          <div style="width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;font-family:'Syne',sans-serif;color:#fff" id="profileAvatar">A</div>
+          <div><div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:700" id="profileUsername">—</div><div id="profileRoleBadge"></div></div>
+        </div>
+        <div class="pass-section">
+          <div class="pass-section-title">🔑 Change Password</div>
+          <div class="form-grid">
+            <div class="form-group"><label class="form-label">Current Password</label><input class="form-input" id="curPass" type="password"></div>
+            <div class="form-group"><label class="form-label">New Password</label><input class="form-input" id="newPass" type="password" placeholder="Min 6 characters"></div>
+            <div class="form-group"><label class="form-label">Confirm New Password</label><input class="form-input" id="confPass" type="password"></div>
+          </div>
+          <button class="btn-submit" onclick="changePassword()">🔑 Update Password</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:0">
+        <div class="card-title"><div class="dot" style="background:var(--accent2);box-shadow:0 0 8px var(--accent2)"></div>Session Info</div>
+        <div style="font-size:13px;color:var(--muted2);line-height:2.2">
+          <div>Logged in as: <span style="color:var(--text)" id="sessionUser">—</span></div>
+          <div>Role: <span style="color:var(--text)" id="sessionRole">—</span></div>
+          <div>Session started: <span style="color:var(--text)" id="sessionTime">—</span></div>
+          <div>Auto-logout in: <span style="color:var(--warn)" id="sessionCountdown">—</span></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:0">
+        <div class="card-title"><div class="dot" style="background:var(--accent2);box-shadow:0 0 8px var(--accent2)"></div>☁️ Cloud Sync</div>
+        <div id="gistStatusBlock" style="font-size:13px;line-height:2;color:var(--muted2);margin-bottom:16px"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn-submit" onclick="forcePush()" style="background:var(--accent2)">⬆ Push All to Firebase</button>
+          <button class="btn-submit" onclick="forcePull()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border)">⬇ Pull from Firebase</button>
+          <button class="btn-submit" onclick="openFbSetup()" style="background:rgba(245,166,35,.15);color:#f5a623;border:1px solid rgba(245,166,35,.3)">🔥 Reconnect Firebase</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="dupModal">
+  <div class="modal modal-warn">
+    <div class="modal-icon">⚠️</div>
+    <div class="modal-title">Duplicate Entry</div>
+    <div class="modal-body">This data already exists in the system.</div>
+    <div id="dupDetails"></div>
+    <div class="modal-actions"><button class="btn-modal btn-modal-close" onclick="closeModal('dupModal')">✓ Close</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="editModal">
+  <div class="modal modal-info">
+    <div class="modal-icon">✏️</div>
+    <div class="modal-title" id="editModalTitle">Edit Record</div>
+    <div class="form-group" style="margin-top:8px"><label class="form-label" id="editModalLabel">Value</label><input class="form-input" id="editModalInput" type="text"></div>
+    <div class="form-group"><label class="form-label">Assign to User</label><select class="form-input" id="editModalUser"></select></div>
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-close" onclick="closeModal('editModal')">Cancel</button>
+      <button class="btn-modal" style="background:var(--accent);color:#000;border-color:var(--accent);font-family:'Syne',sans-serif;font-weight:700" onclick="saveEdit()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="deleteUserModal">
+  <div class="modal modal-danger">
+    <div class="modal-icon">🗑️</div>
+    <div class="modal-title">Delete User?</div>
+    <div class="modal-body" id="deleteUserBody">Are you sure?</div>
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-close" onclick="closeModal('deleteUserModal')">Cancel</button>
+      <button class="btn-modal btn-modal-confirm" onclick="confirmDeleteUser()">Yes, Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"><span>✅</span><span id="toastText">Done</span></div>
+
+<script>
+// ═══════════════════════════════
+//  HASH
+// ═══════════════════════════════
+function simpleHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) { h = ((h << 5) - h) + str.charCodeAt(i); h |= 0; }
+  return 'h' + Math.abs(h).toString(36);
+}
+
+// ═══════════════════════════════
+//  DB CONFIG
+// ═══════════════════════════════
+const LS_KEY        = 'datavault_v4';
+const FB_CFG_KEY    = 'datavault_fb_cfg';
+let   CLOUD_ENABLED = false;
+let syncTimer = null;
+
+const DEFAULT_DB = () => ({
+  users:    [{ id:'u1', username:'Adam', password: simpleHash('Adam@123'), role:'owner', created: new Date().toISOString() }],
+  whatsapp: [], accounts: [], upi: [], activity: []
+});
+
+function sanitizeDB(d) {
+  if (!d || typeof d !== 'object') d = DEFAULT_DB();
+  if (!Array.isArray(d.users))    d.users    = [];
+  if (!Array.isArray(d.whatsapp)) d.whatsapp = [];
+  if (!Array.isArray(d.accounts)) d.accounts = [];
+  if (!Array.isArray(d.upi))      d.upi      = [];
+  if (!Array.isArray(d.activity)) d.activity = [];
+  // Only ensure owner exists — never overwrite other users
+  const _ownerIdx = d.users.findIndex(u => u.id === 'u1');
+  if (_ownerIdx === -1) {
+    d.users.unshift({ id:'u1', username:'Adam', password: simpleHash('Adam@123'), role:'owner', created: new Date().toISOString() });
+  }
+  // Only fix missing roles, never touch passwords
+  d.users.forEach(u => { if (!u.role) u.role = 'staff'; });
+  return d;
+}
+
+function mergeArr(local, cloud) {
+  // Cloud is always source of truth — cloud wins over local
+  const map = {};
+  (local||[]).forEach(x => { if (x&&x.id) map[x.id]=x; });
+  (cloud||[]).forEach(x => { if (x&&x.id) map[x.id]=x; }); // cloud overwrites local
+  return Object.values(map);
+}
+
+let db;
+try { const r = localStorage.getItem(LS_KEY); db = r ? sanitizeDB(JSON.parse(r)) : sanitizeDB(DEFAULT_DB()); }
+catch(e) { db = sanitizeDB(DEFAULT_DB()); }
+
+// ═══════════════════════════════════════════════════════════════════
+//  FIREBASE SAVE ENGINE
+//  - Each record is its own Firestore document (scales to millions)
+//  - Real-time listeners push changes instantly (< 1 second)
+//  - localStorage is always written first as offline backup
+//  - writeBatch used for all saves (atomic, fast)
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Write a single record to Firestore ──────────────────────────────
+async function fbSaveRecord(col, rec) {
+  if (!CLOUD_ENABLED || !window._fbReady) return;
+  try {
+    await window._fbSet(col, rec.id, {...rec, _ts: Date.now()});
+    // Listener will update all clients automatically — no localStorage needed
+  } catch(e) {
+    console.warn('fbSaveRecord failed', e);
+    // Retry once after 2s
+    setTimeout(async()=>{
+      try { await window._fbSet(col, rec.id, {...rec, _ts: Date.now()}); } catch(e2){}
+    }, 2000);
+  }
+}
+
+// ── Delete a single record from Firestore ───────────────────────────
+async function fbDeleteRecord(col, id) {
+  if (!CLOUD_ENABLED || !window._fbReady) return;
+  try { await window._fbDel(col, id); } catch(e) {}
+}
+
+// ── Push entire local db to Firestore in batches of 500 ─────────────
+async function fbPushAll() {
+  if (!CLOUD_ENABLED || !window._fbReady) return;
+  setSyncStatus('orange','Uploading all…'); showSyncBar();
+  const all = [
+    ...db.whatsapp.map(r=>({col:'whatsapp',  rec:r})),
+    ...db.accounts.map(r=>({col:'accounts',  rec:r})),
+    ...db.upi.map(r=>     ({col:'upi',       rec:r})),
+    ...db.users.map(r=>   ({col:'users',     rec:r})),
+    ...db.activity.map(r=>({col:'activity',  rec:r})),
+  ];
+  // Firestore batch limit = 500 ops
+  for (let i = 0; i < all.length; i += 499) {
+    const chunk = all.slice(i, i + 499);
+    const batch = window._fbBatch();
+    chunk.forEach(({col, rec}) => {
+      batch.set(window._fbDoc(col, rec.id), {...rec, _ts: Date.now()});
+    });
+    try { await batch.commit(); } catch(e) { console.warn('batch failed', e); }
+  }
+  setSyncStatus('green','All data uploaded ✓'); hideSyncBar();
+  showToast('☁️ All data pushed to Firebase');
+}
+
+// ── Pull entire Firestore into local db (used on first login) ────────
+async function fbPullAll() {
+  if (!CLOUD_ENABLED || !window._fbReady) return false;
+  setSyncStatus('orange','Loading…'); showSyncBar();
+  try {
+    const [waSnap, acSnap, upSnap, usSnap, actSnap] = await Promise.all([
+      window._fbGetAll('whatsapp'),
+      window._fbGetAll('accounts'),
+      window._fbGetAll('upi'),
+      window._fbGetAll('users'),
+      window._fbGetAll('activity'),
+    ]);
+    const toArr = snap => snap.docs.map(d => {const x={...d.data()}; delete x._ts; return x;});
+    const cloud = {
+      whatsapp: toArr(waSnap),
+      accounts: toArr(acSnap),
+      upi:      toArr(upSnap),
+      users:    toArr(usSnap),
+      activity: toArr(actSnap),
+    };
+    if (cloud.users.length) {
+      // Cloud is source of truth — replace local with cloud data
+      db.users    = cloud.users.length    ? cloud.users    : db.users;
+      db.whatsapp = cloud.whatsapp.length ? cloud.whatsapp : db.whatsapp;
+      db.accounts = cloud.accounts.length ? cloud.accounts : db.accounts;
+      db.upi      = cloud.upi.length      ? cloud.upi      : db.upi;
+      db.activity = cloud.activity.length ? cloud.activity : db.activity;
+      // Enrich any records missing username
+      ['whatsapp','accounts','upi'].forEach(col => {
+        db[col].forEach(r => {
+          if (r.userId && !r.username) {
+            const u = db.users.find(x => x.id === r.userId);
+            if (u) r.username = u.username;
+          }
+        });
+      });
+      db = sanitizeDB(db);
+      try { localStorage.setItem(LS_KEY, JSON.stringify(db)); } catch(e) {}
+    }
+    setSyncStatus('green','Synced ✓'); hideSyncBar();
+    return true;
+  } catch(e) {
+    setSyncStatus('red','Load failed'); hideSyncBar();
+    return false;
+  }
+}
+
+// ── Real-time listeners (called once after login) ────────────────────
+// Uses full-collection snapshot so ALL records from ALL users always show.
+// On every Firestore change, the full collection is replaced in memory
+// and the active page re-renders instantly.
+let _unsubListeners = [];
+let _listenerReady  = false; // true after first snapshot received
+
+function fbStartListeners() {
+  if (!CLOUD_ENABLED || !window._fbReady) return;
+  _unsubListeners.forEach(u => u());
+  _unsubListeners = [];
+  _listenerReady  = false;
+
+  // Track how many collections have fired their first snapshot
+  let _initCount = 0;
+  const COLLECTIONS = ['whatsapp','accounts','upi','users','activity'];
+
+  function _applyFullSnapshot(col, snap) {
+    if (!currentUser) return;
+
+    // Build full fresh array from Firestore
+    const fresh = snap.docs.map(d => {
+      const rec = {...d.data()}; delete rec._ts;
+      return rec;
+    }).filter(r => r.id);
+
+    db[col] = fresh;
+
+    // Count first-load snapshots — wait for ALL collections before rendering
+    if (!_listenerReady) {
+      _initCount++;
+      if (_initCount >= COLLECTIONS.length) {
+        _listenerReady = true;
+
+        // Enrich all records with usernames now that users collection is loaded
+        ['whatsapp','accounts','upi'].forEach(c => {
+          db[c].forEach(r => {
+            if (r.userId && !r.username) {
+              const u = db.users.find(x => x.id === r.userId);
+              if (u) r.username = u.username;
+            }
+          });
+        });
+
+        db = sanitizeDB(db);
+        try { localStorage.setItem(LS_KEY, JSON.stringify(db)); } catch(e) {}
+
+        // Handle session restore (page refresh) — find user from Firebase data
+        if (_pendingRestoreUid && !currentUser) {
+          const restoredUser = db.users.find(x => x.id === _pendingRestoreUid);
+          if (restoredUser) {
+            _pendingRestoreUid = null;
+            applyUser(restoredUser);
+            showPage(_pendingRestorePage, document.getElementById('nav-'+_pendingRestorePage));
+          } else {
+            // User not found in Firebase — go back to login
+            _pendingRestoreUid = null;
+            sessionStorage.removeItem('dv_uid');
+            document.getElementById('app').style.display = 'none';
+            document.getElementById('authScreen').style.display = 'flex';
+            fbPreloadUsers();
+            return;
+          }
+        } else if (currentUser) {
+          // Re-find current user from fresh Firebase data
+          const freshUser = db.users.find(x => x.id === currentUser.id);
+          if (freshUser) currentUser = freshUser;
+        }
+
+        refreshAll();
+        setSyncStatus('green', 'Live ✓');
+      }
+      return; // Don't render until ALL collections are loaded
+    }
+
+    // After init — enrich usernames for this collection update
+    if (['whatsapp','accounts','upi'].includes(col)) {
+      db[col].forEach(r => {
+        if (r.userId && !r.username) {
+          const u = db.users.find(x => x.id === r.userId);
+          if (u) r.username = u.username;
+        }
+      });
+    }
+
+    db = sanitizeDB(db);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(db)); } catch(e) {}
+    _refreshActivePage();
+    updateStats();
+    setSyncStatus('green', 'Live ✓');
+  }
+
+  COLLECTIONS.forEach(col => {
+    const unsub = window._fbListen(col, snap => _applyFullSnapshot(col, snap));
+    _unsubListeners.push(unsub);
+  });
+}
+
+function fbStopListeners() {
+  _unsubListeners.forEach(u => u());
+  _unsubListeners = [];
+  _listenerReady  = false;
+}
+
+// ── saveDB — Firebase is source of truth, localStorage is just backup ──
+function saveDB() {
+  // Don't write to localStorage — Firebase listeners will update all devices
+  // localStorage.setItem is only done by listeners after confirmed Firebase data
+}
+
+// ── Legacy compat — forcePush / forcePull ────────────────────────────
+function forcePush(){ fbPushAll(); }
+async function forcePull(){ await fbPullAll(); refreshAll(); showToast('⬇ Data pulled from Firebase'); }
+
+// ── Helper used by real-time listener ───────────────────────────────
+function _refreshActivePage(){
+  const pages=['whatsapp','account','upi','alldata','dashboard','users','staffdetail','profile'];
+  for(const p of pages){
+    const el=document.getElementById('page-'+p);
+    if(el&&el.classList.contains('active')){
+      if(p==='whatsapp')         renderWATable();
+      else if(p==='account')     renderAccTable();
+      else if(p==='upi')         renderUPITable();
+      else if(p==='alldata')     renderAllTable();
+      else if(p==='dashboard')   {updateStats();renderRecentTable();renderCharts();renderLeaderboard();}
+      else if(p==='users')       renderUsersTable();
+      else if(p==='staffdetail') renderStaffDetail();
+      break;
+    }
+  }
+}
+
+// ═══════════════════════════════
+//  SESSION STATE
+// ═══════════════════════════════
+let currentUser=null, sessionStart=null, sessionTimer=null;
+let _pendingRestoreUid=null, _pendingRestorePage='dashboard';
+const SESSION_TIMEOUT=30*60*1000;
+let sortState={}, editCtx=null, deleteUserTarget=null, selectedRoleTab='';
+
+// ═══════════════════════════════
+//  ROLE TAB
+// ═══════════════════════════════
+const ROLE_HINTS = {
+  owner: '👑 Owner — Full control: manage all users, view staff details, add data.',
+  admin: '🛡️ Admin — View dashboard, add and manage data. Cannot create users.',
+  staff: '👤 Staff — Add data entries only.'
+};
+
+function selectRoleTab(role) {
+  selectedRoleTab = role;
+  ['owner','admin','staff'].forEach(r => {
+    document.getElementById('tab-'+r).className = 'role-tab' + (r===role ? ' rt-active-'+r : '');
+  });
+  document.getElementById('roleHint').textContent = ROLE_HINTS[role]||'';
+  document.getElementById('authError').style.display='none';
+  const btn = document.getElementById('loginBtn');
+  btn.className = 'btn ' + (role==='owner'?'btn-owner':role==='admin'?'btn-admin':'btn-primary');
+}
+
+// ═══════════════════════════════
+//  AUTH
+// ═══════════════════════════════
+function applyUser(user, savedPage) {
+  currentUser = user; sessionStart = new Date();
+  sessionStorage.setItem('dv_uid', user.id);
+  document.getElementById('authScreen').style.display='none';
+  document.getElementById('app').style.display='block';
+
+  const av = document.getElementById('sidebarAvatar');
+  av.textContent = user.username[0].toUpperCase();
+  av.className = 'user-avatar av-'+user.role;
+
+  document.getElementById('sidebarName').textContent = user.username;
+  const rl = document.getElementById('sidebarRole');
+  rl.textContent = user.role.toUpperCase();
+  rl.className = 'user-role-lbl lbl-'+user.role;
+
+  const isOwner = user.role==='owner';
+  document.getElementById('nav-users').style.display       = isOwner?'flex':'none';
+  document.getElementById('nav-staffdetail').style.display = isOwner?'flex':'none';
+
+  startClock(); startSessionTimer();
+  // Keep sync status always visible
+  const sb=document.getElementById('syncStatus');if(sb)sb.classList.add('show');
+}
+
+async function doLogin() {
+  if(!selectedRoleTab){showAuthError('Please select your role first.');return;}
+  const u=document.getElementById('loginUser').value.trim();
+  const p=document.getElementById('loginPass').value.trim();
+
+  // Always fetch fresh users from Firebase before checking credentials
+  if(CLOUD_ENABLED) await fbPreloadUsers();
+
+  const user=db.users.find(x=>x.username===u && x.password===simpleHash(p) && x.role===selectedRoleTab);
+  if(!user){showAuthError('Wrong credentials or role. Please try again.');return;}
+
+  applyUser(user);
+  showPage('dashboard',document.getElementById('nav-dashboard'));
+  if(CLOUD_ENABLED){
+    setSyncStatus('orange','Loading data…');
+    fbStartListeners();
+  } else {
+    refreshAll();
+  }
+}
+
+document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+
+window.addEventListener('load', async()=>{
+  // ── Firebase config (hardcoded) ─────────────────────────────────────
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyCBoyB3y2ILbhfxrzXZWFdEd4DJbsEIy9Q",
+    authDomain: "data-a7712.firebaseapp.com",
+    projectId: "data-a7712",
+    storageBucket: "data-a7712.firebasestorage.app",
+    messagingSenderId: "217594003757",
+    appId: "1:217594003757:web:25984094afddbf4ea2d3a4",
+    measurementId: "G-GXYHDBJQMZ"
+  };
+
+  // Init Firebase first
+  const ok = await window._fbInit(FIREBASE_CONFIG);
+  if (ok) {
+    CLOUD_ENABLED = true;
+    localStorage.setItem(FB_CFG_KEY, JSON.stringify(FIREBASE_CONFIG));
+
+    // ── CRITICAL: Clear stale localStorage so Firebase is 100% source of truth ──
+    // Each device had different cached data — wipe it so everyone sees same data
+    localStorage.removeItem(LS_KEY);
+    db = sanitizeDB(DEFAULT_DB()); // start with clean empty db
+  }
+
+  const savedUid  = sessionStorage.getItem('dv_uid');
+  const savedPage = sessionStorage.getItem('dv_page') || 'dashboard';
+
+  if (savedUid && CLOUD_ENABLED) {
+    // Show loading screen while Firebase loads all data
+    document.getElementById('authScreen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    setSyncStatus('orange', 'Loading data…');
+    const sb = document.getElementById('syncStatus'); if(sb) sb.classList.add('show');
+
+    // Load from Firebase — listeners fire full snapshot for all collections
+    // Once all 5 collections load, _applyFullSnapshot will call refreshAll()
+    // and find the restored user automatically
+    _pendingRestoreUid  = savedUid;
+    _pendingRestorePage = savedPage;
+    fbStartListeners();
+  } else {
+    // No saved session — show login
+    document.getElementById('authScreen').style.display = 'flex';
+    if (CLOUD_ENABLED) {
+      // Pre-load users from Firebase so login works correctly
+      fbPreloadUsers();
+    }
+  }
+});
+
+// Pre-load just the users collection so login can authenticate against Firebase users
+async function fbPreloadUsers() {
+  if (!CLOUD_ENABLED || !window._fbReady) return;
+  try {
+    const snap = await window._fbGetAll('users');
+    const fresh = snap.docs.map(d=>{const r={...d.data()};delete r._ts;return r;}).filter(r=>r.id);
+    if (fresh.length) {
+      db.users = fresh;
+      db = sanitizeDB(db);
+    }
+  } catch(e) {}
+}
+
+function showAuthError(msg){const e=document.getElementById('authError');e.textContent=msg;e.style.display='block';}
+function doLogout(){
+  currentUser=null; clearInterval(sessionTimer); selectedRoleTab='';
+  fbStopListeners();
+  sessionStorage.removeItem('dv_uid'); sessionStorage.removeItem('dv_page');
+  // Reset db to empty — Firebase will reload on next login
+  db = sanitizeDB(DEFAULT_DB());
+  ['owner','admin','staff'].forEach(r=>document.getElementById('tab-'+r).className='role-tab');
+  document.getElementById('roleHint').textContent='Select your role above to sign in.';
+  document.getElementById('loginBtn').className='btn btn-primary';
+  document.getElementById('app').style.display='none';
+  document.getElementById('authScreen').style.display='flex';
+  document.getElementById('authError').style.display='none';
+  document.getElementById('loginUser').value='';
+  document.getElementById('loginPass').value='';
+  closeSidebar();
+}
+
+// ═══════════════════════════════
+//  SESSION TIMER
+// ═══════════════════════════════
+let lastActivity=Date.now();
+document.addEventListener('mousemove',()=>lastActivity=Date.now());
+document.addEventListener('keydown',()=>lastActivity=Date.now());
+function startSessionTimer(){
+  clearInterval(sessionTimer);
+  sessionTimer=setInterval(()=>{
+    const rem=SESSION_TIMEOUT-(Date.now()-lastActivity);
+    if(rem<=0){showToast('⏱ Session expired.',true);setTimeout(doLogout,1500);clearInterval(sessionTimer);return;}
+    const el=document.getElementById('sessionCountdown');
+    if(el)el.textContent=`${Math.floor(rem/60000)}m ${Math.floor((rem%60000)/1000)}s`;
+  },1000);
+}
+
+// ═══════════════════════════════
+//  CLOCK & SIDEBAR
+// ═══════════════════════════════
+function startClock(){
+  const tick=()=>{const el=document.getElementById('dashTime');if(el)el.textContent=new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});};
+  tick(); setInterval(tick,30000);
+}
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('sidebarOverlay').classList.toggle('open');}
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebarOverlay').classList.remove('open');}
+
+// ═══════════════════════════════
+//  NAV
+// ═══════════════════════════════
+function showPage(id,el){
+  document.querySelectorAll('.section-page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  if(el)el.classList.add('active'); else{const n=document.getElementById('nav-'+id);if(n)n.classList.add('active');}
+  sessionStorage.setItem('dv_page',id);
+  closeSidebar(); populateUserSelects(); populateUserFilters();
+  if(id==='dashboard'){updateStats();renderRecentTable();renderCharts();renderLeaderboard();}
+  else if(id==='whatsapp') renderWATable();
+  else if(id==='account')  renderAccTable();
+  else if(id==='upi')      renderUPITable();
+  else if(id==='alldata')  renderAllTable();
+  else if(id==='users')    renderUsersTable();
+  else if(id==='staffdetail') renderStaffDetail();
+  else if(id==='profile')  renderProfile();
+}
+
+// ═══════════════════════════════
+//  USER SELECTS & FILTERS
+// ═══════════════════════════════
+function populateUserSelects(){
+  if(!currentUser)return;
+  const opts=db.users.map(u=>`<option value="${u.id}" ${u.id===currentUser.id?'selected':''}>${u.username} (${u.role})</option>`).join('');
+  ['waUser','accUser','upiUser','editModalUser'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=opts;});
+}
+function populateUserFilters(){
+  if(!currentUser)return;
+  const opts=`<option value="">All Users</option>`+db.users.map(u=>`<option value="${u.id}">${u.username}</option>`).join('');
+  [['waUserFilter','wa'],['accUserFilter','acc'],['upiUserFilter','upi'],['allUserFilter','all']].forEach(([wid,px])=>{
+    const wrap=document.getElementById(wid); if(!wrap)return;
+    let sel=document.getElementById(px+'User_filter');
+    if(!sel){sel=document.createElement('select');sel.className='filter-select';sel.id=px+'User_filter';
+      sel.onchange=()=>{if(px==='wa')renderWATable();else if(px==='acc')renderAccTable();else if(px==='upi')renderUPITable();else renderAllTable();};
+      wrap.appendChild(sel);}
+    sel.innerHTML=opts;
+  });
+}
+
+// ═══════════════════════════════
+//  STATS
+// ═══════════════════════════════
+function updateStats(){
+  if(!currentUser)return;
+  document.getElementById('statUsers').textContent=db.users.length;
+  document.getElementById('statWA').textContent=db.whatsapp.length;
+  document.getElementById('statAcc').textContent=db.accounts.length;
+  document.getElementById('statUPI').textContent=db.upi.length;
+  document.getElementById('statTotal').textContent=db.whatsapp.length+db.accounts.length+db.upi.length;
+}
+
+// ═══════════════════════════════
+//  CHARTS
+// ═══════════════════════════════
+let chartTypeInst=null,chartActInst=null;
+function renderCharts(){
+  const c1=document.getElementById('chartType').getContext('2d');
+  if(chartTypeInst)chartTypeInst.destroy();
+  chartTypeInst=new Chart(c1,{type:'doughnut',data:{labels:['WhatsApp','Account','UPI'],datasets:[{data:[db.whatsapp.length,db.accounts.length,db.upi.length],backgroundColor:['#00e5a0','#ffb800','#a78bfa'],borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#8891a0',font:{size:11},boxWidth:12}}},cutout:'68%'}});
+  const c2=document.getElementById('chartActivity').getContext('2d');
+  if(chartActInst)chartActInst.destroy();
+  const days=[],counts=[],allR=[...db.whatsapp.map(x=>x.created),...db.accounts.map(x=>x.created),...db.upi.map(x=>x.created)];
+  for(let i=29;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const k=d.toISOString().slice(0,10);days.push(i%5===0||i===0?d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'}):'');counts.push(allR.filter(c=>c&&c.slice(0,10)===k).length);}
+  chartActInst=new Chart(c2,{type:'bar',data:{labels:days,datasets:[{data:counts,backgroundColor:'rgba(0,229,160,.25)',borderColor:'#00e5a0',borderWidth:1,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#5a6070',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#5a6070',font:{size:10},stepSize:1},grid:{color:'rgba(255,255,255,.04)'}}}}});
+}
+
+function renderLeaderboard(){
+  const el=document.getElementById('userLeaderboard');if(!el)return;
+  const counts={};[...db.whatsapp,...db.accounts,...db.upi].forEach(r=>{counts[r.userId]=(counts[r.userId]||0)+1;});
+  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  if(!sorted.length){el.textContent='';return;}
+  el.innerHTML='🏆 Top: '+sorted.map(([uid,n])=>{const u=db.users.find(x=>x.id===uid);return`<span style="color:var(--accent)">${u?u.username:'?'}</span> (${n})`;}).join(' · ');
+}
+
+// ═══════════════════════════════
+//  HELPERS
+// ═══════════════════════════════
+function fmtDate(iso){return new Date(iso).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+function stripZeros(v){const s=v.replace(/^0+/,'');return s===''?'0':s;}
+function addActivity(type,value){db.activity.unshift({type,value,by:currentUser?.username||'system',created:new Date().toISOString()});}
+function inDateRange(iso,fId,tId){const from=document.getElementById(fId)?.value,to=document.getElementById(tId)?.value;if(!from&&!to)return true;const d=iso.slice(0,10);if(from&&d<from)return false;if(to&&d>to)return false;return true;}
+function getSort(k){return sortState[k]||{col:null,dir:1};}
+function cycleSort(k,c){const s=getSort(k);sortState[k]={col:c,dir:s.col===c?-s.dir:1};}
+function sortTable(type,col){cycleSort(type,col);if(type==='wa')renderWATable();else if(type==='acc')renderAccTable();else if(type==='upi')renderUPITable();else renderAllTable();}
+function applySortArr(arr,key,getVal){
+  const s=getSort(key);if(!s.col)return arr;
+  return [...arr].sort((a,b)=>{let av=getVal(a,s.col),bv=getVal(b,s.col);if(typeof av==='string'){av=av.toLowerCase();bv=bv.toLowerCase();}return av<bv?-s.dir:av>bv?s.dir:0;});
+}
+function roleChip(role){
+  if(role==='owner')return`<span class="chip chip-owner">👑 Owner</span>`;
+  if(role==='admin')return`<span class="chip chip-adminr">🛡️ Admin</span>`;
+  return`<span class="chip chip-staffr">👤 Staff</span>`;
+}
+
+// ═══════════════════════════════
+//  MANAGE USERS (Owner only)
+// ═══════════════════════════════
+function registerUser(){
+  if(currentUser?.role!=='owner'){showToast('⚠️ Only Owner can create users',true);return;}
+  const username=document.getElementById('newUserUser').value.trim();
+  const password=document.getElementById('newUserPass').value.trim();
+  const role=document.getElementById('newUserRole').value;
+  if(!username||!password){showToast('⚠️ Fill all fields',true);return;}
+  if(password.length<6){showToast('⚠️ Password min 6 characters',true);return;}
+  if(db.users.find(u=>u.username===username)){showToast('⚠️ Username already taken',true);return;}
+  const newUser={id:'u'+Date.now(),username,password:simpleHash(password),role,created:new Date().toISOString()};
+  db.users.push(newUser);
+  try{localStorage.setItem(LS_KEY,JSON.stringify(db));}catch(e){}
+  fbSaveRecord('users',newUser);
+  renderUsersTable();updateStats();populateUserSelects();populateUserFilters();
+  document.getElementById('newUserUser').value='';document.getElementById('newUserPass').value='';
+  showToast('✅ Account created: '+username);
+}
+
+function renderUsersTable(){
+  const tbody=document.getElementById('usersTable');if(!tbody)return;
+  const q=(document.getElementById('searchUsers')?.value||'').toLowerCase();
+  let users=db.users.slice();
+  if(q)users=users.filter(u=>u.username.toLowerCase().includes(q)||u.role.includes(q));
+  if(!users.length){tbody.innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">👤</div><div class="empty-text">No users</div></div></td></tr>';return;}
+  const isOwner=currentUser?.role==='owner';
+  tbody.innerHTML=users.map((u,i)=>{
+    const rec=[...db.whatsapp,...db.accounts,...db.upi].filter(r=>r.userId===u.id).length;
+    const canDel=isOwner&&u.id!=='u1'&&u.id!==currentUser?.id;
+    return`<tr>
+      <td style="color:var(--muted2)">${i+1}</td>
+      <td><div class="td-user"><div class="td-avatar">${u.username[0].toUpperCase()}</div><span>${u.username}</span></div></td>
+      <td>${roleChip(u.role)}</td>
+      <td style="font-size:12px;color:var(--muted2)">${fmtDate(u.created)}<br><span style="font-size:10px;color:var(--muted)">${rec} record${rec!==1?'s':''}</span></td>
+      <td>${u.id==='u1'?'<span style="color:var(--owner);font-size:11px">🔒 Protected</span>':u.id===currentUser?.id?'<span style="color:var(--muted);font-size:11px">— You</span>':canDel?`<button class="btn-sm btn-danger" onclick="promptDeleteUser('${u.id}','${u.username}')">🗑️ Delete</button>`:'<span style="color:var(--muted);font-size:11px">—</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function promptDeleteUser(uid,username){
+  if(currentUser?.role!=='owner')return;
+  deleteUserTarget=uid;
+  document.getElementById('deleteUserBody').innerHTML=`Delete <strong style="color:var(--warn)">${username}</strong>? Their data records will remain but be unassigned.`;
+  document.getElementById('deleteUserModal').classList.add('open');
+}
+function confirmDeleteUser(){
+  if(!deleteUserTarget||currentUser?.role!=='owner')return;
+  if(deleteUserTarget==='u1'){showToast('⚠️ Cannot delete the Owner account',true);return;}
+  const _delUid=deleteUserTarget;
+  db.users=db.users.filter(u=>u.id!==_delUid);
+  saveDB();fbDeleteRecord('users',_delUid);deleteUserTarget=null;closeModal('deleteUserModal');
+  renderUsersTable();updateStats();populateUserSelects();populateUserFilters();
+  showToast('🗑️ User deleted');
+}
+
+// ═══════════════════════════════
+//  STAFF DETAILS (Owner only)
+// ═══════════════════════════════
+function renderStaffDetail(){
+  if(currentUser?.role!=='owner')return;
+  const el=document.getElementById('staffDetailContent');if(!el)return;
+  const members=db.users.filter(u=>u.role!=='owner');
+  if(!members.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">No admin or staff yet</div></div>';return;}
+  el.innerHTML=members.map(u=>{
+    const wa=db.whatsapp.filter(r=>r.userId===u.id);
+    const acc=db.accounts.filter(r=>r.userId===u.id);
+    const upi=db.upi.filter(r=>r.userId===u.id);
+    const acts=db.activity.filter(a=>a.by===u.username).slice(0,5);
+    return`<div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+        <div class="user-avatar av-${u.role}" style="width:44px;height:44px;font-size:18px">${u.username[0].toUpperCase()}</div>
+        <div style="flex:1"><div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">${u.username}</div><div style="margin-top:4px">${roleChip(u.role)}</div></div>
+        <div style="font-size:11px;color:var(--muted2);text-align:right">Joined<br>${fmtDate(u.created)}</div>
+      </div>
+      <div class="staff-detail-grid">
+        <div class="sdc"><div class="sdc-num" style="color:var(--accent)">${wa.length}</div><div class="sdc-lbl">WhatsApp</div></div>
+        <div class="sdc"><div class="sdc-num" style="color:var(--warn)">${acc.length}</div><div class="sdc-lbl">Accounts</div></div>
+        <div class="sdc"><div class="sdc-num" style="color:var(--purple)">${upi.length}</div><div class="sdc-lbl">UPI IDs</div></div>
+      </div>
+      ${acts.length?`<div style="margin-top:10px"><div style="font-size:10px;color:var(--muted2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Recent Activity</div>${acts.map(a=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)"><span style="color:var(--muted2)">${a.type}: <span style="color:var(--text)">${a.value}</span></span><span style="color:var(--muted);font-size:11px">${fmtDate(a.created)}</span></div>`).join('')}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════
+//  WHATSAPP
+// ═══════════════════════════════
+function addWhatsApp(){
+  const userId=document.getElementById('waUser').value;
+  const num=document.getElementById('waNumber').value.trim();
+  if(!num){showToast('⚠️ Enter a number',true);return;}
+  let digits=num.replace(/\D/g,'').replace(/^0+/,'');
+  // Strip country code: if starts with 91 and total length > 10, remove one leading 91
+  if(digits.length>10&&digits.startsWith('91'))digits=digits.slice(2);
+  if(!/^\d{10}$/.test(digits)){showToast('⚠️ Enter valid 10-digit number',true);return;}
+  const fmt='+91'+digits;
+  const dup=db.whatsapp.find(x=>x.number===fmt);
+  if(dup){const by=db.users.find(u=>u.id===dup.userId);showDupModal('WhatsApp Number',fmt,by?by.username:'Unknown',dup.created);return;}
+  const _waUser=db.users.find(u=>u.id===userId);
+  const _waRec={id:'w'+Date.now(),userId,username:_waUser?_waUser.username:'',number:fmt,created:new Date().toISOString()};
+  db.whatsapp.unshift(_waRec);
+  addActivity('WhatsApp',fmt);saveDB();fbSaveRecord('whatsapp',_waRec);fbSaveRecord('activity',db.activity[0]);renderWATable();updateStats();renderRecentTable();
+  document.getElementById('waNumber').value='';showToast('✅ Added: '+fmt);
+}
+
+function renderWATable(){
+  const q=(document.getElementById('searchWA')?.value||'').toLowerCase();
+  const uf=document.getElementById('waUser_filter')?.value||'';
+  let rows=db.whatsapp.slice().sort((a,b)=>new Date(b.created)-new Date(a.created));
+  if(uf)rows=rows.filter(x=>x.userId===uf);
+  rows=rows.filter(x=>inDateRange(x.created,'waFrom','waTo'));
+  rows=rows.filter(x=>!q||x.number.includes(q));
+  rows=applySortArr(rows,'wa',(r,c)=>c==='date'?r.created:c==='user'?(db.users.find(u=>u.id===r.userId)?.username||''):r.number);
+  const tbody=document.getElementById('waTable');
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="4"><div class="empty-state"><div class="empty-icon">💬</div><div class="empty-text">No records</div></div></td></tr>';return;}
+  tbody.innerHTML=rows.map(r=>{const uname=r.username||(db.users.find(u=>u.id===r.userId)?.username)||'-';return`<tr><td><span style="color:var(--accent)">${r.number}</span><button class="copy-btn" onclick="copyText('${r.number}')">copy</button></td><td>${uname}</td><td style="color:var(--muted2);font-size:12px">${fmtDate(r.created)}</td><td><button class="btn-sm btn-edit" onclick="openEdit('whatsapp','${r.id}')">✏️ Edit</button></td></tr>`;}).join('');
+}
+
+// ═══════════════════════════════
+//  ACCOUNT
+// ═══════════════════════════════
+function addAccount(){
+  const userId=document.getElementById('accUser').value;
+  const raw=document.getElementById('accNumber').value.trim();
+  if(!raw){showToast('⚠️ Enter an account number',true);return;}
+  const clean=stripZeros(raw);
+  const dup=db.accounts.find(x=>x.number===clean);
+  if(dup){const by=db.users.find(u=>u.id===dup.userId);showDupModal('Account Number',clean,by?by.username:'Unknown',dup.created);return;}
+  const _acUser=db.users.find(u=>u.id===userId);
+  const _acRec={id:'a'+Date.now(),userId,username:_acUser?_acUser.username:'',number:clean,created:new Date().toISOString()};
+  db.accounts.unshift(_acRec);
+  addActivity('Account',clean);saveDB();fbSaveRecord('accounts',_acRec);fbSaveRecord('activity',db.activity[0]);renderAccTable();updateStats();renderRecentTable();
+  document.getElementById('accNumber').value='';showToast('✅ Added: '+clean);
+}
+
+function renderAccTable(){
+  const q=(document.getElementById('searchAcc')?.value||'').toLowerCase();
+  const uf=document.getElementById('accUser_filter')?.value||'';
+  let rows=db.accounts.slice().sort((a,b)=>new Date(b.created)-new Date(a.created));
+  if(uf)rows=rows.filter(x=>x.userId===uf);
+  rows=rows.filter(x=>inDateRange(x.created,'accFrom','accTo'));
+  rows=rows.filter(x=>!q||x.number.includes(q));
+  rows=applySortArr(rows,'acc',(r,c)=>c==='date'?r.created:c==='user'?(db.users.find(u=>u.id===r.userId)?.username||''):r.number);
+  const tbody=document.getElementById('accTable');
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="4"><div class="empty-state"><div class="empty-icon">🏦</div><div class="empty-text">No records</div></div></td></tr>';return;}
+  tbody.innerHTML=rows.map(r=>{const uname=r.username||(db.users.find(u=>u.id===r.userId)?.username)||'-';return`<tr><td><span style="color:var(--warn)">${r.number}</span><button class="copy-btn" onclick="copyText('${r.number}')">copy</button></td><td>${uname}</td><td style="color:var(--muted2);font-size:12px">${fmtDate(r.created)}</td><td><button class="btn-sm btn-edit" onclick="openEdit('accounts','${r.id}')">✏️ Edit</button></td></tr>`;}).join('');
+}
+
+// ═══════════════════════════════
+//  UPI
+// ═══════════════════════════════
+function addUPI(){
+  const userId=document.getElementById('upiUser').value;
+  const upiID=document.getElementById('upiID').value.trim();
+  if(!upiID){showToast('⚠️ Enter a UPI ID',true);return;}
+  if(!upiID.includes('@')){showToast('⚠️ UPI ID must contain @',true);return;}
+  const dup=db.upi.find(x=>x.upiID.toLowerCase()===upiID.toLowerCase());
+  if(dup){const by=db.users.find(u=>u.id===dup.userId);showDupModal('UPI ID',upiID,by?by.username:'Unknown',dup.created);return;}
+  const _upUser=db.users.find(u=>u.id===userId);
+  const _upRec={id:'p'+Date.now(),userId,username:_upUser?_upUser.username:'',upiID,created:new Date().toISOString()};
+  db.upi.unshift(_upRec);
+  addActivity('UPI',upiID);saveDB();fbSaveRecord('upi',_upRec);fbSaveRecord('activity',db.activity[0]);renderUPITable();updateStats();renderRecentTable();
+  document.getElementById('upiID').value='';showToast('✅ Added: '+upiID);
+}
+
+function renderUPITable(){
+  const q=(document.getElementById('searchUPI')?.value||'').toLowerCase();
+  const uf=document.getElementById('upiUser_filter')?.value||'';
+  let rows=db.upi.slice().sort((a,b)=>new Date(b.created)-new Date(a.created));
+  if(uf)rows=rows.filter(x=>x.userId===uf);
+  rows=rows.filter(x=>inDateRange(x.created,'upiFrom','upiTo'));
+  rows=rows.filter(x=>!q||x.upiID.toLowerCase().includes(q));
+  rows=applySortArr(rows,'upi',(r,c)=>c==='date'?r.created:c==='user'?(db.users.find(u=>u.id===r.userId)?.username||''):r.upiID);
+  const tbody=document.getElementById('upiTable');
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="4"><div class="empty-state"><div class="empty-icon">💳</div><div class="empty-text">No records</div></div></td></tr>';return;}
+  tbody.innerHTML=rows.map(r=>{const uname=r.username||(db.users.find(u=>u.id===r.userId)?.username)||'-';return`<tr><td><span style="color:var(--purple)">${r.upiID}</span><button class="copy-btn" onclick="copyText('${r.upiID}')">copy</button></td><td>${uname}</td><td style="color:var(--muted2);font-size:12px">${fmtDate(r.created)}</td><td><button class="btn-sm btn-edit" onclick="openEdit('upi','${r.id}')">✏️ Edit</button></td></tr>`;}).join('');
+}
+
+// ═══════════════════════════════
+//  ALL RECORDS
+// ═══════════════════════════════
+function renderAllTable(){
+  const q=(document.getElementById('searchAll')?.value||'').toLowerCase();
+  const typeF=document.getElementById('filterType')?.value||'';
+  const uf=document.getElementById('allUser_filter')?.value||'';
+  let all=[...db.whatsapp.map(x=>({id:x.id,type:'WhatsApp',value:x.number,userId:x.userId,created:x.created})),...db.accounts.map(x=>({id:x.id,type:'Account',value:x.number,userId:x.userId,created:x.created})),...db.upi.map(x=>({id:x.id,type:'UPI',value:x.upiID,userId:x.userId,created:x.created}))];
+  all.sort((a,b)=>new Date(b.created)-new Date(a.created));
+  if(typeF)all=all.filter(x=>x.type===typeF);
+  if(uf)all=all.filter(x=>x.userId===uf);
+  all=all.filter(x=>inDateRange(x.created,'allFrom','allTo'));
+  all=all.filter(x=>!q||x.value.toLowerCase().includes(q)||x.type.toLowerCase().includes(q));
+  all=applySortArr(all,'all',(r,c)=>c==='date'?r.created:c==='user'?(db.users.find(u=>u.id===r.userId)?.username||''):r.value);
+  const tbody=document.getElementById('allTable');
+  if(!all.length){tbody.innerHTML='<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🗄️</div><div class="empty-text">No records</div></div></td></tr>';return;}
+  const cc={WhatsApp:'chip-green',Account:'chip-warn',UPI:'chip-purple'};
+  tbody.innerHTML=all.map((r,i)=>{const uname=r.username||(db.users.find(u=>u.id===r.userId)?.username)||'-';const dsrc=r.type==='WhatsApp'?'whatsapp':r.type==='Account'?'accounts':'upi';return`<tr><td style="color:var(--muted2)">${i+1}</td><td><span class="chip ${cc[r.type]}">${r.type}</span></td><td>${r.value}<button class="copy-btn" onclick="copyText('${r.value}')">copy</button></td><td>${uname}</td><td style="color:var(--muted2);font-size:12px">${fmtDate(r.created)}</td><td><button class="btn-sm btn-edit" onclick="openEdit('${dsrc}','${r.id}')">✏️ Edit</button></td></tr>`;}).join('');
+}
+
+// ═══════════════════════════════
+//  RECENT ACTIVITY
+// ═══════════════════════════════
+function renderRecentTable(){
+  const tbody=document.getElementById('recentTable');
+  const feed=db.activity;
+  if(!feed.length){tbody.innerHTML='<tr><td colspan="4"><div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No activity yet</div></div></td></tr>';return;}
+  const cc={WhatsApp:'chip-green',Account:'chip-warn',UPI:'chip-purple'};
+  tbody.innerHTML=feed.map(a=>`<tr><td><span class="chip ${cc[a.type]||''}">${a.type}</span></td><td style="color:var(--accent2)">${a.value}</td><td>${a.by}</td><td style="color:var(--muted2);font-size:12px">${fmtDate(a.created)}</td></tr>`).join('');
+}
+
+// ═══════════════════════════════
+//  EDIT RECORD
+// ═══════════════════════════════
+function openEdit(src,id){
+  const arr=src==='whatsapp'?db.whatsapp:src==='accounts'?db.accounts:db.upi;
+  const rec=arr.find(r=>r.id===id);if(!rec)return;
+  editCtx={src,id};
+  const label=src==='whatsapp'?'WhatsApp Number':src==='accounts'?'Account Number':'UPI ID';
+  document.getElementById('editModalTitle').textContent='Edit '+label;
+  document.getElementById('editModalLabel').textContent=label;
+  document.getElementById('editModalInput').value=src==='upi'?rec.upiID:rec.number;
+  populateUserSelects();document.getElementById('editModalUser').value=rec.userId;
+  document.getElementById('editModal').classList.add('open');
+}
+function saveEdit(){
+  if(!editCtx)return;
+  const{src,id}=editCtx;
+  const newVal=document.getElementById('editModalInput').value.trim();
+  const newUser=document.getElementById('editModalUser').value;
+  if(!newVal){showToast('⚠️ Value cannot be empty',true);return;}
+  if(src==='whatsapp'){
+    let digits=newVal.replace(/\D/g,'').replace(/^0+/,'');
+    if(digits.length>10&&digits.startsWith('91'))digits=digits.slice(2);
+    if(!/^\d{10}$/.test(digits)){showToast('⚠️ Invalid number',true);return;}
+    const rec=db.whatsapp.find(r=>r.id===id);rec.number='+91'+digits;rec.userId=newUser;
+  }else if(src==='accounts'){
+    const rec=db.accounts.find(r=>r.id===id);rec.number=stripZeros(newVal);rec.userId=newUser;
+  }else{
+    if(!newVal.includes('@')){showToast('⚠️ UPI ID must contain @',true);return;}
+    const rec=db.upi.find(r=>r.id===id);rec.upiID=newVal;rec.userId=newUser;
+  }
+  saveDB();
+  if(src==='whatsapp'){const _r=db.whatsapp.find(r=>r.id===id);if(_r)fbSaveRecord('whatsapp',_r);}
+  else if(src==='accounts'){const _r=db.accounts.find(r=>r.id===id);if(_r)fbSaveRecord('accounts',_r);}
+  else{const _r=db.upi.find(r=>r.id===id);if(_r)fbSaveRecord('upi',_r);}
+  closeModal('editModal');refreshAll();showToast('✅ Record updated & saved');
+}
+
+// ═══════════════════════════════
+//  PROFILE
+// ═══════════════════════════════
+function renderProfile(){
+  if(!currentUser)return;
+  const av=document.getElementById('profileAvatar');
+  av.textContent=currentUser.username[0].toUpperCase();
+  av.style.background=currentUser.role==='owner'?'linear-gradient(135deg,var(--owner),#f97316)':currentUser.role==='admin'?'linear-gradient(135deg,#3b82f6,var(--accent))':'linear-gradient(135deg,var(--accent),var(--purple))';
+  document.getElementById('profileUsername').textContent=currentUser.username;
+  document.getElementById('profileRoleBadge').innerHTML=roleChip(currentUser.role);
+  document.getElementById('sessionUser').textContent=currentUser.username;
+  document.getElementById('sessionRole').textContent=currentUser.role;
+  document.getElementById('sessionTime').textContent=sessionStart?fmtDate(sessionStart.toISOString()):'—';
+  const g=document.getElementById('gistStatusBlock');
+  if(g)g.innerHTML=CLOUD_ENABLED?`<span style="color:var(--accent)">● Firebase Connected</span> &nbsp;|&nbsp; Project: <span style="color:var(--text)">${(()=>{try{const c=JSON.parse(localStorage.getItem(FB_CFG_KEY));return c?c.projectId:'unknown';}catch(e){return 'unknown';}})()}</span>`:`<span style="color:var(--warn)">● Local only — <a href="#" onclick="openFbSetup()" style="color:var(--accent)">Connect Firebase</a></span>`;
+}
+function changePassword(){
+  const cur=document.getElementById('curPass').value,nw=document.getElementById('newPass').value,cf=document.getElementById('confPass').value;
+  if(!cur||!nw||!cf){showToast('⚠️ Fill all fields',true);return;}
+  if(simpleHash(cur)!==currentUser.password){showToast('⚠️ Current password wrong',true);return;}
+  if(nw.length<6){showToast('⚠️ Min 6 characters',true);return;}
+  if(nw!==cf){showToast('⚠️ Passwords do not match',true);return;}
+  const u=db.users.find(x=>x.id===currentUser.id);u.password=simpleHash(nw);currentUser.password=simpleHash(nw);
+  saveDB();document.getElementById('curPass').value='';document.getElementById('newPass').value='';document.getElementById('confPass').value='';
+  showToast('🔑 Password updated');
+}
+
+// ═══════════════════════════════
+//  EXPORT CSV
+// ═══════════════════════════════
+function exportCSV(src){
+  let rows=[],headers=[],filename='';
+  if(src==='whatsapp'||src==='all'){const d=db.whatsapp.map(r=>{const u=db.users.find(x=>x.id===r.userId);return{Type:'WhatsApp',Value:r.number,User:u?u.username:'-',Added:fmtDate(r.created)};});if(src==='whatsapp'){rows=d;headers=['Type','Value','User','Added'];filename='whatsapp';}else rows.push(...d);}
+  if(src==='accounts'||src==='all'){const d=db.accounts.map(r=>{const u=db.users.find(x=>x.id===r.userId);return{Type:'Account',Value:r.number,User:u?u.username:'-',Added:fmtDate(r.created)};});if(src==='accounts'){rows=d;headers=['Type','Value','User','Added'];filename='accounts';}else rows.push(...d);}
+  if(src==='upi'||src==='all'){const d=db.upi.map(r=>{const u=db.users.find(x=>x.id===r.userId);return{Type:'UPI',Value:r.upiID,User:u?u.username:'-',Added:fmtDate(r.created)};});if(src==='upi'){rows=d;headers=['Type','Value','User','Added'];filename='upi';}else rows.push(...d);}
+  if(src==='all'){headers=['Type','Value','User','Added'];filename='all_records';}
+  if(!rows.length){showToast('⚠️ No data to export',true);return;}
+  const csv=[headers.join(','),...rows.map(r=>headers.map(h=>`"${(r[h]||'').toString().replace(/"/g,'""')}"`).join(','))].join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download=`datavault_${filename}_${new Date().toISOString().slice(0,10)}.csv`;a.click();
+  showToast('⬇ Exported: '+filename+'.csv');
+}
+
+// ═══════════════════════════════
+//  DUPLICATE MODAL
+// ═══════════════════════════════
+function showDupModal(type,value,addedBy,dateAdded){
+  document.getElementById('dupDetails').innerHTML=`<div class="modal-data-row"><div class="modal-data-label">Type</div><div class="modal-data-val">${type}</div></div><div class="modal-data-row"><div class="modal-data-label">Value</div><div class="modal-data-val">${value}</div></div><div class="modal-data-row"><div class="modal-data-label">First Added By</div><div class="modal-data-val">${addedBy}</div><div class="modal-date">📅 ${fmtDate(dateAdded)}</div></div>`;
+  document.getElementById('dupModal').classList.add('open');
+}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-overlay').forEach(el=>el.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');}));
+
+// ═══════════════════════════════
+//  TOAST & COPY
+// ═══════════════════════════════
+function showToast(msg,isWarn){
+  const t=document.getElementById('toast');
+  t.querySelector('#toastText').textContent=msg;
+  t.style.borderColor=isWarn?'var(--warn)':'var(--accent)';
+  t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);
+}
+function copyText(text){navigator.clipboard.writeText(text).then(()=>showToast('📋 Copied: '+text));}
+
+// ═══════════════════════════════
+//  REFRESH ALL
+// ═══════════════════════════════
+function refreshAll(){
+  updateStats();renderUsersTable();renderWATable();renderAccTable();renderUPITable();renderAllTable();renderRecentTable();populateUserSelects();populateUserFilters();
+  if(document.getElementById('page-dashboard').classList.contains('active')){renderCharts();renderLeaderboard();}
+  if(document.getElementById('page-staffdetail').classList.contains('active'))renderStaffDetail();
+  if(document.getElementById('page-profile').classList.contains('active'))renderProfile();
+}
+
+// ═══════════════════════════════
+//  FIREBASE SETUP
+// ═══════════════════════════════
+function showFbSetup() {
+  document.getElementById('fbSetupModal').classList.add('open');
+}
+function skipFirebase() {
+  document.getElementById('fbSetupModal').classList.remove('open');
+  showToast('Running offline — data saved locally only');
+}
+
+async function connectFirebase() {
+  const raw = document.getElementById('fbConfigInput').value.trim();
+  const errEl = document.getElementById('fbSetupError');
+  errEl.style.display = 'none';
+
+  if (!raw) { errEl.textContent = 'Please paste your Firebase config.'; errEl.style.display='block'; return; }
+
+  // Extract the JSON object from the pasted text (handles full const block or just the object)
+  let cfg = null;
+  try {
+    // Try direct JSON parse first
+    cfg = JSON.parse(raw);
+  } catch(e) {
+    // Extract object literal from JS code block
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        // Convert JS object literal to JSON (add quotes to keys)
+        const jsonStr = match[0]
+          .replace(/\/\/.*$/gm, '')           // remove line comments
+          .replace(/,\s*\}/g, '}')            // trailing commas
+          .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":'); // quote keys
+        cfg = JSON.parse(jsonStr);
+      } catch(e2) {
+        errEl.textContent = 'Could not parse config. Make sure you pasted the full firebaseConfig block.';
+        errEl.style.display = 'block';
+        return;
+      }
+    }
+  }
+
+  if (!cfg || !cfg.apiKey || !cfg.projectId) {
+    errEl.textContent = 'Invalid config — make sure apiKey and projectId are present.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  // Try to connect
+  const btn = document.querySelector('.fb-btn-primary');
+  btn.textContent = '⏳ Connecting…'; btn.disabled = true;
+
+  const ok = await window._fbInit(cfg);
+  if (!ok) {
+    errEl.textContent = 'Connection failed. Check your config and make sure Firestore is enabled.';
+    errEl.style.display = 'block';
+    btn.textContent = '🔥 Connect Firebase'; btn.disabled = false;
+    return;
+  }
+
+  CLOUD_ENABLED = true;
+  localStorage.setItem(FB_CFG_KEY, JSON.stringify(cfg));
+
+  document.getElementById('fbSetupModal').classList.remove('open');
+  setSyncStatus('green', 'Firebase Connected ✓');
+  const sb = document.getElementById('syncStatus'); if(sb) sb.classList.add('show');
+
+  // Pull existing cloud data then push local data up
+  showToast('🔥 Firebase connected! Syncing data…');
+  await fbPullAll();
+  await fbPushAll();
+  refreshAll();
+  if (currentUser) fbStartListeners();
+}
+
+// Allow re-opening setup from Profile page
+function openFbSetup() { showFbSetup(); }
+
+</script>
+
+<!-- FIREBASE SETUP MODAL -->
+<div id="fbSetupModal">
+  <div class="fb-card">
+    <div class="fb-title">🔥 Connect Firebase</div>
+    <div class="fb-sub">Connect your free Firebase project to store millions of records with real-time sync. Takes 2 minutes.</div>
+    <div class="fb-steps">
+      <b>Step 1:</b> Go to <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a><br>
+      <b>Step 2:</b> Create a new project (or use existing)<br>
+      <b>Step 3:</b> Click <b>Firestore Database</b> → Create → Start in <b>test mode</b><br>
+      <b>Step 4:</b> Go to <b>Project Settings</b> → Your apps → Add Web app (&lt;/&gt;)<br>
+      <b>Step 5:</b> Copy the <b>firebaseConfig</b> object and paste it below
+    </div>
+    <div class="fb-paste-label">Paste your firebaseConfig here</div>
+    <textarea class="fb-paste" id="fbConfigInput" placeholder='const firebaseConfig = {
+  apiKey: "AIza...",
+  authDomain: "your-app.firebaseapp.com",
+  projectId: "your-app",
+  storageBucket: "your-app.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123..."
+};
+
+// You can paste the whole block — we will extract the config automatically'></textarea>
+    <div class="fb-error" id="fbSetupError"></div>
+    <div class="fb-actions">
+      <button class="fb-btn fb-btn-primary" onclick="connectFirebase()">🔥 Connect Firebase</button>
+      <button class="fb-btn fb-btn-skip" onclick="skipFirebase()">Use offline only</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
