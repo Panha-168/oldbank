@@ -13,6 +13,7 @@ import { getFirestore, collection, doc, setDoc, onSnapshot, getDocs, deleteDoc, 
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 window._fbReady = false;
 window._firestore = null;
+window._fbInitDone = false;
 window._fbInit = async function(cfg) {
   try {
     const app = initializeApp(cfg);
@@ -26,6 +27,7 @@ window._fbInit = async function(cfg) {
     window._fbListen  = (col, cb) => onSnapshot(window._fbColl(col), cb);
     window._fbBatch   = () => writeBatch(window._firestore);
     window._fbTS      = serverTimestamp;
+    window._fbReady   = true; // set AFTER all functions are assigned
     console.log('Firebase ready');
     return true;
   } catch(e) { console.error('Firebase init failed', e); return false; }
@@ -760,8 +762,16 @@ async function fbPullAll() {
 let _unsubListeners = [];
 let _listenerReady  = false; // true after first snapshot received
 
-function fbStartListeners() {
-  if (!CLOUD_ENABLED || !window._fbReady) return;
+async function fbStartListeners() {
+  if (!CLOUD_ENABLED) return;
+  // Wait up to 5s for Firebase module to be ready
+  if (!window._fbReady) {
+    await new Promise(resolve => {
+      const t = setInterval(()=>{ if(window._fbReady){clearInterval(t);resolve();} },100);
+      setTimeout(()=>{ clearInterval(t); resolve(); }, 5000);
+    });
+  }
+  if (!window._fbReady) { setSyncStatus('red','Firebase failed to load'); return; }
   _unsubListeners.forEach(u => u());
   _unsubListeners = [];
   _listenerReady  = false;
@@ -975,47 +985,53 @@ window.addEventListener('load', async()=>{
     measurementId: "G-GXYHDBJQMZ"
   };
 
-  // Init Firebase first
+  // Wait for Firebase ES module to be fully ready (max 5 seconds)
+  await new Promise(resolve => {
+    if (window._fbReady) { resolve(); return; }
+    const check = setInterval(() => {
+      if (window._fbReady) { clearInterval(check); resolve(); }
+    }, 100);
+    setTimeout(() => { clearInterval(check); resolve(); }, 5000);
+  });
+
+  // Init Firebase
   const ok = await window._fbInit(FIREBASE_CONFIG);
   if (ok) {
     CLOUD_ENABLED = true;
     localStorage.setItem(FB_CFG_KEY, JSON.stringify(FIREBASE_CONFIG));
-
-    // ── CRITICAL: Clear stale localStorage so Firebase is 100% source of truth ──
-    // Each device had different cached data — wipe it so everyone sees same data
+    // Clear stale localStorage — Firebase is the only source of truth
     localStorage.removeItem(LS_KEY);
-    db = sanitizeDB(DEFAULT_DB()); // start with clean empty db
+    db = sanitizeDB(DEFAULT_DB());
   }
 
   const savedUid  = sessionStorage.getItem('dv_uid');
   const savedPage = sessionStorage.getItem('dv_page') || 'dashboard';
 
   if (savedUid && CLOUD_ENABLED) {
-    // Show loading screen while Firebase loads all data
+    // Show app shell while Firebase loads
     document.getElementById('authScreen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     setSyncStatus('orange', 'Loading data…');
     const sb = document.getElementById('syncStatus'); if(sb) sb.classList.add('show');
-
-    // Load from Firebase — listeners fire full snapshot for all collections
-    // Once all 5 collections load, _applyFullSnapshot will call refreshAll()
-    // and find the restored user automatically
     _pendingRestoreUid  = savedUid;
     _pendingRestorePage = savedPage;
     fbStartListeners();
   } else {
-    // No saved session — show login
     document.getElementById('authScreen').style.display = 'flex';
-    if (CLOUD_ENABLED) {
-      // Pre-load users from Firebase so login works correctly
-      fbPreloadUsers();
-    }
+    if (CLOUD_ENABLED) fbPreloadUsers();
   }
 });
 
 // Pre-load just the users collection so login can authenticate against Firebase users
 async function fbPreloadUsers() {
-  if (!CLOUD_ENABLED || !window._fbReady) return;
+  if (!CLOUD_ENABLED) return;
+  if (!window._fbReady) {
+    await new Promise(resolve => {
+      const t = setInterval(()=>{ if(window._fbReady){clearInterval(t);resolve();} },100);
+      setTimeout(()=>{ clearInterval(t); resolve(); }, 5000);
+    });
+  }
+  if (!window._fbReady) return;
   try {
     const snap = await window._fbGetAll('users');
     const fresh = snap.docs.map(d=>{const r={...d.data()};delete r._ts;return r;}).filter(r=>r.id);
